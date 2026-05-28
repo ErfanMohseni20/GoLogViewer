@@ -7,18 +7,12 @@ import (
 
 var started = false
 
-func Start() {
+func Start(router *gin.Engine) {
     if started {
         return
     }
 
     started = true
 
-    go func() {
-        router := gin.Default()
-
-        viewer.RegisterRoutes(router)
-
-        _ = router.Run("127.0.0.1:3000")
-    }()
+    viewer.RegisterRoutes(router)
 }

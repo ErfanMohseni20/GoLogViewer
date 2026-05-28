@@ -7,7 +7,6 @@ import (
 
     "go.uber.org/zap"
     "go.uber.org/zap/zapcore"
-    "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var once sync.Once
@@ -15,15 +14,9 @@ var zapLogger *zap.Logger
 
 func initLogger() {
     once.Do(func() {
-        _ = os.MkdirAll("storage/logs", os.ModePerm)
+        _ = os.MkdirAll("storage/logs", 0755)
 
-        writer := zapcore.AddSync(&lumberjack.Logger{
-            Filename:   "storage/logs/log.txt",
-            MaxSize:    10,
-            MaxBackups: 5,
-            MaxAge:     30,
-            Compress:   true,
-        })
+        writer := zapcore.AddSync(os.Stdout)
 
         encoderConfig := zap.NewProductionEncoderConfig()
         encoderConfig.TimeKey = "time"
@@ -39,7 +32,7 @@ func initLogger() {
     })
 }
 
-func Log(logType string, status string, message string, err error) {
+func Log(status string, message string, err error) {
     initLogger()
 
     errorMessage := ""
@@ -49,7 +42,6 @@ func Log(logType string, status string, message string, err error) {
     }
 
     entry := LogEntry{
-        Type:    logType,
         Status:  status,
         Message: message,
         Error:   errorMessage,
@@ -60,7 +52,6 @@ func Log(logType string, status string, message string, err error) {
 
     zapLogger.Info(
         message,
-        zap.String("type", logType),
         zap.String("status", status),
         zap.String("error", errorMessage),
     )

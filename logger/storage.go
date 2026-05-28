@@ -6,7 +6,7 @@ import (
 
 func SaveLog(entry LogEntry) error {
     file, err := os.OpenFile(
-        "storage/logs/log.txt",
+        LogFilePath,
         os.O_APPEND|os.O_CREATE|os.O_WRONLY,
         0666,
     )

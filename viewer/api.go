@@ -17,9 +17,14 @@ func RegisterRoutes(router *gin.Engine) {
 }
 
 func LogsAPI(c *gin.Context) {
-    file, err := os.Open("storage/logs/log.txt")
+    file, err := os.Open(logger.LogFilePath)
 
     if err != nil {
+        if os.IsNotExist(err) {
+            c.JSON(http.StatusOK, []logger.LogEntry{})
+            return
+        }
+
         c.JSON(http.StatusInternalServerError, gin.H{
             "error": err.Error(),
         })

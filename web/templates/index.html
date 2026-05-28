@@ -44,21 +44,21 @@
                         return text.replace(/[&<>"']/g, m => map[m])
                     }
 
+                    let errorHtml = ''
+                    if (log.error) {
+                        errorHtml = `<div class="text-red-400 text-sm mb-2">${escapeHtml(log.error)}</div>`
+                    }
+
                     div.innerHTML = `
                         <div class="flex items-center gap-3 mb-3">
                             <span class="${color} px-3 py-1 rounded-lg text-sm font-bold">
                                 ${escapeHtml(log.status)}
                             </span>
-                            <span class="text-cyan-400 font-semibold">
-                                ${escapeHtml(log.type)}
-                            </span>
                         </div>
                         <div class="text-lg mb-2">
                             ${escapeHtml(log.message)}
                         </div>
-                        <div class="text-red-400 text-sm mb-2">
-                            ${escapeHtml(log.error || '')}
-                        </div>
+                        ${errorHtml}
                         <div class="text-gray-500 text-xs">
                             ${escapeHtml(log.time)}
                         </div>
