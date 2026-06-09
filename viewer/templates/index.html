@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GolaveLog Viewer</title>
+    <link rel="stylesheet" href="{{.PathPrefix}}/static/style.css">
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">
+                <h1>GolaveLog</h1>
+                <p>Laravel-style log viewer</p>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>Log Files</h2>
+                <ul id="file-list" class="file-list"></ul>
+            </div>
+        </aside>
+
+        <main class="content">
+            <header class="toolbar">
+                <div class="toolbar-left">
+                    <h2 id="current-file">Select a log file</h2>
+                    <span id="entry-count" class="muted"></span>
+                </div>
+
+                <div class="toolbar-right">
+                    <input id="search" type="search" placeholder="Search logs..." autocomplete="off">
+
+                    <select id="level-filter">
+                        <option value="">All levels</option>
+                        {{range .Levels}}
+                        <option value="{{.}}">{{.}}</option>
+                        {{end}}
+                    </select>
+
+                    <label class="toggle">
+                        <input id="auto-refresh" type="checkbox">
+                        <span>Auto refresh</span>
+                    </label>
+
+                    <button id="refresh-btn" type="button">Refresh</button>
+                </div>
+            </header>
+
+            <section id="logs" class="logs"></section>
+
+            <footer class="pagination">
+                <button id="prev-page" type="button">Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page" type="button">Next</button>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        const pathPrefix = {{printf "%q" .PathPrefix}};
+        const state = {
+            files: [],
+            selectedFile: '',
+            page: 1,
+            perPage: 50,
+            level: '',
+            search: '',
+            totalPages: 0,
+            refreshTimer: null,
+        };
+
+        const fileListEl = document.getElementById('file-list');
+        const logsEl = document.getElementById('logs');
+        const currentFileEl = document.getElementById('current-file');
+        const entryCountEl = document.getElementById('entry-count');
+        const pageInfoEl = document.getElementById('page-info');
+        const searchEl = document.getElementById('search');
+        const levelFilterEl = document.getElementById('level-filter');
+        const autoRefreshEl = document.getElementById('auto-refresh');
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text).replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+            }[char]));
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        function formatDate(timestamp) {
+            return new Date(timestamp * 1000).toLocaleString();
+        }
+
+        function levelClass(level) {
+            return `level level-${level}`;
+        }
+
+        async function loadFiles() {
+            const response = await fetch(`${pathPrefix}/api/files`);
+            if (!response.ok) throw new Error('Failed to load log files');
+
+            state.files = await response.json();
+            renderFiles();
+
+            if (!state.selectedFile && state.files.length > 0) {
+                selectFile(state.files[0].name);
+            }
+        }
+
+        function renderFiles() {
+            if (state.files.length === 0) {
+                fileListEl.innerHTML = '<li class="empty">No log files found</li>';
+                return;
+            }
+
+            fileListEl.innerHTML = state.files.map((file) => `
+                <li>
+                    <button
+                        type="button"
+                        class="file-item ${file.name === state.selectedFile ? 'active' : ''}"
+                        data-file="${escapeHtml(file.name)}"
+                    >
+                        <span class="file-name">${escapeHtml(file.name)}</span>
+                        <span class="file-meta">${formatBytes(file.size)}</span>
+                    </button>
+                </li>
+            `).join('');
+
+            fileListEl.querySelectorAll('.file-item').forEach((button) => {
+                button.addEventListener('click', () => selectFile(button.dataset.file));
+            });
+        }
+
+        function selectFile(name) {
+            state.selectedFile = name;
+            state.page = 1;
+            currentFileEl.textContent = name;
+            renderFiles();
+            loadEntries();
+        }
+
+        async function loadEntries() {
+            if (!state.selectedFile) {
+                logsEl.innerHTML = '<div class="empty-state">Select a log file to view entries.</div>';
+                return;
+            }
+
+            const params = new URLSearchParams({
+                file: state.selectedFile,
+                page: String(state.page),
+                per_page: String(state.perPage),
+            });
+
+            if (state.level) params.set('level', state.level);
+            if (state.search) params.set('search', state.search);
+
+            logsEl.innerHTML = '<div class="empty-state">Loading...</div>';
+
+            try {
+                const response = await fetch(`${pathPrefix}/api/entries?${params.toString()}`);
+                if (!response.ok) throw new Error('Failed to load log entries');
+
+                const data = await response.json();
+                state.totalPages = data.total_pages || 0;
+                entryCountEl.textContent = `${data.total} entries`;
+                pageInfoEl.textContent = `Page ${data.page} of ${Math.max(data.total_pages, 1)}`;
+                renderEntries(data.entries || []);
+            } catch (error) {
+                logsEl.innerHTML = '<div class="empty-state error">Failed to load log entries.</div>';
+            }
+        }
+
+        function renderEntries(entries) {
+            if (entries.length === 0) {
+                logsEl.innerHTML = '<div class="empty-state">No log entries match your filters.</div>';
+                return;
+            }
+
+            logsEl.innerHTML = entries.map((entry) => {
+                const context = entry.context && Object.keys(entry.context).length
+                    ? `<pre class="context">${escapeHtml(JSON.stringify(entry.context, null, 2))}</pre>`
+                    : '';
+
+                const exception = entry.exception
+                    ? `<pre class="exception">${escapeHtml(entry.exception)}</pre>`
+                    : '';
+
+                return `
+                    <article class="log-entry">
+                        <header class="log-header">
+                            <span class="${levelClass(entry.level)}">${escapeHtml(entry.level)}</span>
+                            <span class="channel">${escapeHtml(entry.channel || 'default')}</span>
+                            <time>${escapeHtml(entry.time)}</time>
+                        </header>
+                        <p class="message">${escapeHtml(entry.message)}</p>
+                        ${exception}
+                        ${context}
+                    </article>
+                `;
+            }).join('');
+        }
+
+        function scheduleAutoRefresh() {
+            clearInterval(state.refreshTimer);
+            if (autoRefreshEl.checked) {
+                state.refreshTimer = setInterval(loadEntries, 5000);
+            }
+        }
+
+        document.getElementById('refresh-btn').addEventListener('click', loadEntries);
+        document.getElementById('prev-page').addEventListener('click', () => {
+            if (state.page > 1) {
+                state.page -= 1;
+                loadEntries();
+            }
+        });
+        document.getElementById('next-page').addEventListener('click', () => {
+            if (state.totalPages === 0 || state.page < state.totalPages) {
+                state.page += 1;
+                loadEntries();
+            }
+        });
+
+        let searchTimer;
+        searchEl.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                state.search = searchEl.value.trim();
+                state.page = 1;
+                loadEntries();
+            }, 300);
+        });
+
+        levelFilterEl.addEventListener('change', () => {
+            state.level = levelFilterEl.value;
+            state.page = 1;
+            loadEntries();
+        });
+
+        autoRefreshEl.addEventListener('change', scheduleAutoRefresh);
+
+        loadFiles().catch(() => {
+            fileListEl.innerHTML = '<li class="empty error">Failed to load log files</li>';
+        });
+    </script>
+</body>
+</html>

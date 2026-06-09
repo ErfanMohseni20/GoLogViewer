@@ -1,60 +1,85 @@
 package logger
-import (
-    "fmt"
-    "os"
-    "sync"
-    "time"
 
-    "go.uber.org/zap"
-    "go.uber.org/zap/zapcore"
+import "sync"
+
+var (
+	initMu     sync.Mutex
+	defaultMgr *Manager
 )
 
-var once sync.Once
-var zapLogger *zap.Logger
+func Init(cfg Config) error {
+	initMu.Lock()
+	defer initMu.Unlock()
 
-func initLogger() {
-    once.Do(func() {
-        _ = os.MkdirAll("storage/logs", 0755)
+	manager, err := NewManager(cfg)
+	if err != nil {
+		return err
+	}
 
-        writer := zapcore.AddSync(os.Stdout)
-
-        encoderConfig := zap.NewProductionEncoderConfig()
-        encoderConfig.TimeKey = "time"
-        encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-
-        core := zapcore.NewCore(
-            zapcore.NewJSONEncoder(encoderConfig),
-            writer,
-            zap.InfoLevel,
-        )
-
-        zapLogger = zap.New(core)
-    })
+	defaultMgr = manager
+	return nil
 }
 
-func Log(status string, message string, err error) {
-    initLogger()
+func ensureDefault() {
+	initMu.Lock()
+	defer initMu.Unlock()
 
-    errorMessage := ""
+	if defaultMgr != nil {
+		return
+	}
 
-    if err != nil {
-        errorMessage = err.Error()
-    }
+	manager, err := NewManager(DefaultConfig())
+	if err != nil {
+		panic("golavelog: failed to initialize default logger")
+	}
+	defaultMgr = manager
+}
 
-    entry := LogEntry{
-        Status:  status,
-        Message: message,
-        Error:   errorMessage,
-        Time:    time.Now().Format(time.RFC3339),
-    }
+func Default() *Manager {
+	ensureDefault()
+	return defaultMgr
+}
 
-    _ = SaveLog(entry)
+func CurrentConfig() Config {
+	return Default().Config()
+}
 
-    zapLogger.Info(
-        message,
-        zap.String("status", status),
-        zap.String("error", errorMessage),
-    )
+func Channel(name string) *Logger {
+	return Default().MustChannel(name)
+}
 
-    fmt.Println("[GolaveLog]", status, message)
+func With(keysAndValues ...any) *Logger {
+	return Default().MustChannel("").With(keysAndValues...)
+}
+
+func Emergency(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Emergency(message, keysAndValues...)
+}
+
+func Alert(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Alert(message, keysAndValues...)
+}
+
+func Critical(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Critical(message, keysAndValues...)
+}
+
+func Error(message string, err error, keysAndValues ...any) error {
+	return Default().MustChannel("").Error(message, err, keysAndValues...)
+}
+
+func Warning(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Warning(message, keysAndValues...)
+}
+
+func Notice(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Notice(message, keysAndValues...)
+}
+
+func Info(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Info(message, keysAndValues...)
+}
+
+func Debug(message string, keysAndValues ...any) error {
+	return Default().MustChannel("").Debug(message, keysAndValues...)
 }
