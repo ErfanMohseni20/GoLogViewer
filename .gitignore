@@ -1,0 +1,21 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Logs produced by the examples and by tests
+/storage/
+*.log
+*.log.*
+
+# Profiling artifacts
+*.prof
+cpu.out
+mem.out
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
