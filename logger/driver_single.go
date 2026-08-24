@@ -1,33 +1,30 @@
 package logger
 
-type SingleDriver struct {
+// singleDriver appends every entry to one file.
+type singleDriver struct {
 	name     string
 	minLevel Level
-	writer   *FileWriter
+	writer   *fileWriter
 }
 
-func NewSingleDriver(name string, path string, minLevel Level) (*SingleDriver, error) {
-	writer, err := NewFileWriter(path)
+func newSingleDriver(name, path string, minLevel Level, opts fileWriterOptions) (*singleDriver, error) {
+	writer, err := newFileWriter(path, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return &SingleDriver{
-		name:     name,
-		minLevel: minLevel,
-		writer:   writer,
-	}, nil
+	return &singleDriver{name: name, minLevel: minLevel, writer: writer}, nil
 }
 
-func (s *SingleDriver) Name() string {
-	return s.name
-}
+func (s *singleDriver) Name() string { return s.name }
 
-func (s *SingleDriver) Log(entry Entry) error {
+func (s *singleDriver) Log(entry Entry) error {
 	if !entry.Level.Allows(s.minLevel) {
 		return nil
 	}
-
 	entry.Channel = s.name
 	return s.writer.Write(entry)
 }
+
+func (s *singleDriver) Sync() error  { return s.writer.Sync() }
+func (s *singleDriver) Close() error { return s.writer.Close() }
